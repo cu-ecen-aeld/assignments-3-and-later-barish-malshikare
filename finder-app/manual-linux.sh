@@ -114,7 +114,7 @@ sudo mknod -m 0600 $OUTDIR/rootfs/dev/console c 5 1
 echo "Copying scripts and binary to rootfs/home"
 cd ${my_path}
 echo $(pwd)
-make clean
+#make clean
 make CROSS_COMPILE=${CROSS_COMPILE}
 
 # TODO: Copy the finder related scripts and executables to the /home directory
