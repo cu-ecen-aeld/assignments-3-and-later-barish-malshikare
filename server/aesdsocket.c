@@ -212,6 +212,8 @@ int main(int argc, char **argv)
     // Check if the application to be run in daemon mode
     if ((argc >= 2) && (strcmp(argv[1], "-d") == 0))
     {
+        printf("Started application in demon  mode\n");
+        syslog(LOG_INFO, "Started application in demon  mode\n");
         daemon_mode = true;
     }
     

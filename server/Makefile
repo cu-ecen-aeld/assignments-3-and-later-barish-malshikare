@@ -8,7 +8,7 @@ aesdsocket:aesdsocket.o
 	$(CC) -o  aesdsocket aesdsocket.o
 
 aesdsocket.o:aesdsocket.c
-	$(CC) -c aesdsocket.c
+	$(CC) -lpthread -lrt -c aesdsocket.c
 clean:
 	rm -f aesdsocket.o aesdsocket
 
