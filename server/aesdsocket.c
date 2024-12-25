@@ -328,7 +328,7 @@ void *thread_function(void *_arg)
 
 int main(int argc, char **argv)
 {
-    int socket_fd, client_fd;
+    int socket_fd, client_fd, file_fd;
     struct sockaddr_storage client_addr;
     socklen_t client_addr_size;
     int status;
