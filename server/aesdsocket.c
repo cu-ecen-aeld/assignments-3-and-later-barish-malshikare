@@ -32,13 +32,12 @@ typedef struct
 typedef struct thread_Node
 {
     pthread_t thread_id;
-    SLIST_ENTRY(thread_Node) entry;
-}thread_Node;
-
-SLIST_HEAD(ThreadList, thread_Node) head = SLIST_HEAD_INITIALIZER(head);
+    SLIST_ENTRY(thread_Node_t) entry;
+}thread_Node_t;
 
 pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t thread_list_mutex = PTHREAD_MUTEX_INITIALIZER;
+void *thread_function(void *_arg);
 
 
 bool create_daemon()
@@ -96,14 +95,13 @@ void initialize_sigaction()
     }
 }
 
-
 int store_received_data(int client_fd, int file_fd)
 {
     char *client_buffer = NULL;
     size_t total_received = 0;
     size_t current_size = CLIENT_BUFFER_LEN;
     size_t multiplication_factor = 1;
-
+    
     // Dynamically allocate initial buffer
     client_buffer = (char *)calloc(current_size, sizeof(char));
     if (client_buffer == NULL)
@@ -197,18 +195,51 @@ int return_data_to_client(int client_fd, int file_fd)
     return 0;
 }
 
+void *thread_function(void *_arg)
+{
+    ThreadArgs * arg = (ThreadArgs *)_arg;
+    
+    char client_ip[INET_ADDRSTRLEN];
+    if (arg->socket_addr.ss_family == AF_INET) {
+        // IPv4 address
+        struct sockaddr_in *s = (struct sockaddr_in *)&arg->socket_addr;
+        if (inet_ntop(AF_INET, &s->sin_addr, client_ip, sizeof(client_ip)) == NULL) {
+        }
+    }  
+
+
+    syslog(LOG_INFO, "Accepted connection from %s", client_ip);
+    if (store_received_data(arg->client_fd, arg->file_fd) == 0)
+    {
+        return_data_to_client(arg->client_fd, arg->file_fd);
+    }
+    if (close(arg->client_fd) == 0)
+    {
+        syslog(LOG_INFO, "Closed connection from %s", client_ip);
+    }
+    else
+    {
+        syslog(LOG_ERR, "Closing of connection from %s failed", client_ip);
+    }
+       
+    free(_arg);//free the memory allocated 
+    pthread_exit(NULL);
+}
+
+//thread_Node_t head; 
+SLIST_HEAD(thread_Node_t, entry) head = SLIST_HEAD_INITIALIZER(head);
 int main(int argc, char **argv)
 {
     int socket_fd, client_fd;
     struct sockaddr_storage client_addr;
     socklen_t client_addr_size;
-    int file_fd, status;
+    int status, file_fd;
     int option = 1;
     struct sockaddr_in address;
     socklen_t addrlen = sizeof(address);
-
     bool daemon_mode = false;
-
+    pthread_t new_thread;
+    SLIST_INIT(&head); 
     // Check if the application to be run in daemon mode
     if ((argc >= 2) && (strcmp(argv[1], "-d") == 0))
     {
@@ -262,6 +293,8 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    initialize_sigaction();
+    client_addr_size = sizeof(client_addr); // Initialize client address size
     file_fd = open(SOCKETDATA_FILE, O_RDWR | O_CREAT | O_TRUNC, 0666);
     if (file_fd == -1)
     {
@@ -269,11 +302,9 @@ int main(int argc, char **argv)
         
         exit(1);
     }
-    initialize_sigaction();
-    client_addr_size = sizeof(client_addr); // Initialize client address size
-
+    thread_Node_t *node = NULL;
     while (!exit_main_loop)
-    {
+    {        
         client_fd = accept(socket_fd, (struct sockaddr *)&client_addr, &client_addr_size);
         if (client_fd == -1)
         {
@@ -281,28 +312,31 @@ int main(int argc, char **argv)
             continue;
         }
         
-        char client_ip[INET_ADDRSTRLEN];
-       if (client_addr.ss_family == AF_INET) {
-            // IPv4 address
-            struct sockaddr_in *s = (struct sockaddr_in *)&client_addr;
-            if (inet_ntop(AF_INET, &s->sin_addr, client_ip, sizeof(client_ip)) == NULL) {
-            }
-   		}  
-
-
-		syslog(LOG_INFO, "Accepted connection from %s", client_ip);
-		if (store_received_data(client_fd, file_fd) == 0)
-		{
-		    return_data_to_client(client_fd, file_fd);
-		}
-		if (close(client_fd) == 0)
-		{
-		    syslog(LOG_INFO, "Closed connection from %s", client_ip);
-		}
-		else
-		{
-		    syslog(LOG_ERR, "Closing of connection from %s failed", client_ip);
-		}
+        //Create a thread and add to SLL 
+        node = malloc(sizeof(struct thread_Node));      /* Insert at the head. */
+        if(&head==NULL) {
+            SLIST_INSERT_HEAD(&head, node, entry);
+        }
+        // else 
+        // {
+        //     SLIST_INSERT_AFTER(head, node, entry);/* Insert after. */
+        // }         
+    
+        ThreadArgs * th_data= (ThreadArgs *) malloc(sizeof(ThreadArgs));
+        th_data->client_fd = client_fd;
+        th_data->file_fd = file_fd;
+        memcpy(&th_data->socket_addr,&client_addr,sizeof(client_addr));
+        pthread_create(&new_thread, NULL, thread_function, th_data);       
     }
-    close(file_fd);    
+    SLIST_FOREACH(node, &head, entry)
+    {
+        pthread_join(node->thread_id, NULL); 
+    }  
+    while (!SLIST_EMPTY(&head)) {           /* List Deletion. */
+        node = SLIST_FIRST(&head);
+        SLIST_REMOVE_HEAD(&head, entry);
+        free(node);
+    }    
+    close(file_fd); 
 }
+
